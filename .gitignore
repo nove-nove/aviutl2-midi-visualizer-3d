@@ -1,0 +1,9 @@
+# Build outputs
+/build/
+/dist/
+/artifact/
+*.obj
+*.lib
+*.exp
+*.pdb
+*.ilk

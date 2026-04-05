@@ -1,0 +1,81 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version label
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine package version
+        shell: pwsh
+        run: |
+          $version = ""
+          $isPrerelease = "false"
+
+          if ($env:GITHUB_REF -like "refs/tags/*") {
+            $version = $env:GITHUB_REF_NAME
+            if ($version -match '(?i)(^|[-._])(alpha|beta|rc)([-.]?\d+)?$') {
+              $isPrerelease = "true"
+            }
+          } elseif ("${{ github.event.inputs.version }}") {
+            $version = "${{ github.event.inputs.version }}"
+            if ($version -match '(?i)(^|[-._])(alpha|beta|rc)([-.]?\d+)?$') {
+              $isPrerelease = "true"
+            }
+          } else {
+            $version = "dev-$($env:GITHUB_SHA.Substring(0, 7))"
+          }
+
+          "AMV3D_BUILD_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "AMV3D_IS_PRERELEASE=$isPrerelease" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build mod2
+        shell: pwsh
+        run: .\tools\build_mod2.ps1 -Version $env:AMV3D_BUILD_VERSION
+
+      - name: Build package
+        shell: pwsh
+        run: .\tools\build_package.ps1 -Version $env:AMV3D_BUILD_VERSION
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AviUtl2MidiVisualizer3D-${{ env.AMV3D_BUILD_VERSION }}
+          path: dist/aviutl2-midi-visualizer-3d.zip
+
+      - name: Publish GitHub Release asset
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $asset = "dist\aviutl2-midi-visualizer-3d.zip"
+          $isPrerelease = $env:AMV3D_IS_PRERELEASE -eq "true"
+
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $asset --clobber
+          } else {
+            $args = @("release", "create", $tag, $asset, "--title", $tag, "--notes", "Automated release for $tag.")
+            if ($isPrerelease) {
+              $args += "--prerelease"
+            }
+            gh @args
+          }

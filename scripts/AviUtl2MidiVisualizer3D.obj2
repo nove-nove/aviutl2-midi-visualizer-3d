@@ -1,0 +1,386 @@
+--information:AviUtl2 MIDI Visualizer 3D
+--label:AviUtl2 MIDI Visualizer 3D
+--file@midi_path:MIDI
+--track@time_scale:時間スケール,40,2400,520,1
+--track@pre_roll:前方表示秒,0.5,30,6,0.1
+--track@post_roll:後方表示秒,0.5,30,18,0.1
+--track@note_step:音高の間隔,4,120,26,1
+--track@channel_step:トラック間隔,12,320,120,1
+--track@note_height:ノート高さ,2,120,24,1
+--track@note_width:ノート幅,2,200,24,1
+--track@grid_width:グリッド幅,1,32,4,1
+--track@grid_alpha:グリッド透,0,100,27,1
+--track@beat_alpha:拍枠の透過,0,100,18,1
+--track@bar_alpha:小節枠透過,0,100,32,1
+--track@playback_alpha:断面の透過,0,100,22,1
+--track@playback_thickness:断面の厚み,2,120,26,1
+--track@active_hold_time_ms:発光時間ms,0,2000,400,1
+--track@active_ratio:発光サイズ,100,300,140,1
+--track@active_white_rate:白寄せ率,0,100,90,1
+--track@ripple_lifetime_ms:波紋時間ms,100,4000,1600,1
+--track@ripple_size:波紋サイズ,20,2000,1000,1
+--track@ripple_thickness_rate:波紋の太さ,20,300,100,1
+--track@max_segments:最大ノート数,1,8192,3072,1
+--track@max_beats:最大拍数,1,4096,1024,1
+--track@max_ripples:最大波紋,1,2048,512,1
+--select@color_mode:色モード,CHANNEL=0,SCALE=1
+--color@grid_color:Grid,0x444444
+--color@playback_color:PlaySec,0xaaaaaa
+--color@ch01:Ch-01,0xef7272
+--color@ch02:Ch-02,0x81ef72
+--color@ch03:Ch-03,0x7291ef
+--color@ch04:Ch-04,0xefa272
+--color@ch05:Ch-05,0x72ef91
+--color@ch06:Ch-06,0x8372ef
+--color@ch07:Ch-07,0xefd072
+--color@ch08:Ch-08,0x72efc1
+--color@ch09:Ch-09,0xb072ef
+--color@ch10:Ch-10,0xdeef72
+--color@ch11:Ch-11,0x72efef
+--color@ch12:Ch-12,0xe072ef
+--color@ch13:Ch-13,0xb0ef72
+--color@ch14:Ch-14,0x72bfef
+--color@ch15:Ch-15,0xef72d0
+--color@ch16:Ch-16,0xef72a0
+--color@sc01:Scale01(C),0xd50000
+--color@sc02:Scale02(C#),0x480bff
+--color@sc03:Scale03(D),0xffff40
+--color@sc04:Scale04(D#),0x9f009f
+--color@sc05:Scale05(E),0xaaffd5
+--color@sc06:Scale06(F),0x9f001c
+--color@sc07:Scale07(F#),0x409fff
+--color@sc08:Scale08(G),0xffaf0b
+--color@sc09:Scale09(G#),0x9f00d5
+--color@sc10:Scale10(A),0x75ff75
+--color@sc11:Scale11(A#),0x6a0035
+--color@sc12:Scale12(B),0x75e7ff
+
+local midi = obj.module("AviUtl2MidiVisualizer3D")
+local channel_colors = {
+	ch01, ch02, ch03, ch04,
+	ch05, ch06, ch07, ch08,
+	ch09, ch10, ch11, ch12,
+	ch13, ch14, ch15, ch16,
+}
+local scale_colors = {
+	sc01, sc02, sc03, sc04, sc05, sc06,
+	sc07, sc08, sc09, sc10, sc11, sc12,
+}
+
+local loaded_color = -1
+local normal_quads = {}
+local ripple_quads = {}
+local RIPPLE_OUTER_RADIUS_RATIO = 0.5
+local RIPPLE_THICKNESS_RATIO = 0.14975
+
+local function num(v, default)
+	local n = tonumber(v)
+	if n == nil or n ~= n then
+		return default
+	end
+	return n
+end
+
+local function clamp01(v)
+	if v < 0 then
+		return 0
+	end
+	if v > 1 then
+		return 1
+	end
+	return v
+end
+
+local function color_channels(color)
+	local c = math.floor(tonumber(color) or 0)
+	local r = math.floor(c / 0x10000) % 0x100
+	local g = math.floor(c / 0x100) % 0x100
+	local b = c % 0x100
+	return r, g, b
+end
+
+local function pack_color(r, g, b)
+	return math.floor(r) * 0x10000 + math.floor(g) * 0x100 + math.floor(b)
+end
+
+local function mix_to_white(color, rate)
+	local r, g, b = color_channels(color)
+	return pack_color(
+		r + (255 - r) * rate,
+		g + (255 - g) * rate,
+		b + (255 - b) * rate
+	)
+end
+
+local function channel_color(channel)
+	return tonumber(channel_colors[(channel % 16) + 1]) or 0xffffff
+end
+
+local function scale_color(note)
+	return tonumber(scale_colors[(note % 12) + 1]) or 0xffffff
+end
+
+local function note_color(channel, note)
+	if math.floor(num(color_mode, 0) + 0.5) == 1 then
+		return scale_color(note)
+	end
+	return channel_color(channel)
+end
+
+local function pitch_to_y(pitch, step)
+	return (63.5 - pitch) * step
+end
+
+local function clear_batches()
+	normal_quads = {}
+	ripple_quads = {}
+end
+
+local function append_quad(batch, p0, p1, p2, p3, color, alpha)
+	local r, g, b = color_channels(color)
+	local a = clamp01(alpha)
+	table.insert(batch, {
+		p0[1], p0[2], p0[3],
+		p1[1], p1[2], p1[3],
+		p2[1], p2[2], p2[3],
+		p3[1], p3[2], p3[3],
+		r / 255.0, g / 255.0, b / 255.0, a,
+		r / 255.0, g / 255.0, b / 255.0, a,
+		r / 255.0, g / 255.0, b / 255.0, a,
+		r / 255.0, g / 255.0, b / 255.0, a,
+	})
+end
+
+local function append_box(batch, x0, x1, y0, y1, z0, z1, color, alpha)
+	append_quad(batch, { x0, y0, z0 }, { x1, y0, z0 }, { x1, y1, z0 }, { x0, y1, z0 }, color, alpha)
+	append_quad(batch, { x1, y0, z1 }, { x0, y0, z1 }, { x0, y1, z1 }, { x1, y1, z1 }, color, alpha)
+	append_quad(batch, { x0, y0, z1 }, { x1, y0, z1 }, { x1, y0, z0 }, { x0, y0, z0 }, color, alpha)
+	append_quad(batch, { x0, y1, z0 }, { x1, y1, z0 }, { x1, y1, z1 }, { x0, y1, z1 }, color, alpha)
+	append_quad(batch, { x0, y0, z1 }, { x0, y0, z0 }, { x0, y1, z0 }, { x0, y1, z1 }, color, alpha)
+	append_quad(batch, { x1, y0, z0 }, { x1, y0, z1 }, { x1, y1, z1 }, { x1, y1, z0 }, color, alpha)
+end
+
+local function append_line_x(batch, x0, x1, y, z, width, color, alpha)
+	local half = width * 0.5
+	append_box(batch, x0, x1, y - half, y + half, z - half, z + half, color, alpha)
+end
+
+local function append_line_y(batch, x, y0, y1, z, width, color, alpha)
+	local half = width * 0.5
+	append_box(batch, x - half, x + half, y0, y1, z - half, z + half, color, alpha)
+end
+
+local function append_line_z(batch, x, y, z0, z1, width, color, alpha)
+	local half = width * 0.5
+	append_box(batch, x - half, x + half, y - half, y + half, z0, z1, color, alpha)
+end
+
+local function append_plane_frame_x(batch, x, y0, y1, z0, z1, width, color, alpha)
+	append_line_y(batch, x, y0, y1, z0, width, color, alpha)
+	append_line_y(batch, x, y0, y1, z1, width, color, alpha)
+	append_line_z(batch, x, y0, z0, z1, width, color, alpha)
+	append_line_z(batch, x, y1, z0, z1, width, color, alpha)
+end
+
+local function append_ring_x(batch, x, y, z, radius_y, radius_z, line_width, color, alpha)
+	local outer_y = radius_y
+	local outer_z = radius_z
+	local inner_y = math.max(1, radius_y - line_width)
+	local inner_z = math.max(1, radius_z - line_width)
+	local steps = 24
+	for i = 0, steps - 1 do
+		local a0 = math.pi * 2 * i / steps
+		local a1 = math.pi * 2 * (i + 1) / steps
+		local oy0 = y + math.cos(a0) * outer_y
+		local oz0 = z + math.sin(a0) * outer_z
+		local oy1 = y + math.cos(a1) * outer_y
+		local oz1 = z + math.sin(a1) * outer_z
+		local iy0 = y + math.cos(a0) * inner_y
+		local iz0 = z + math.sin(a0) * inner_z
+		local iy1 = y + math.cos(a1) * inner_y
+		local iz1 = z + math.sin(a1) * inner_z
+		append_quad(
+			batch,
+			{ x, oy0, oz0 },
+			{ x, oy1, oz1 },
+			{ x, iy1, iz1 },
+			{ x, iy0, iz0 },
+			color,
+			alpha
+		)
+	end
+end
+
+local function flush_batch(batch, blend)
+	if #batch == 0 then
+		return
+	end
+	obj.setoption("blend", blend)
+	obj.drawpoly(batch)
+end
+
+if midi_path == "" or midi_path == nil then
+	obj.setfont("MS UI Gothic", 44, 3, 0xffffff, 0x000000)
+	obj.load("text", "MIDI file を選択してください")
+	return
+end
+
+local ok = midi.load_midi(midi_path)
+if not ok then
+	obj.setfont("MS UI Gothic", 40, 3, 0xff8080, 0x000000)
+	obj.load("text", midi.get_last_error())
+	return
+end
+
+local cfg_time_scale = num(time_scale, 520)
+local cfg_pre_roll = num(pre_roll, 6)
+local cfg_post_roll = num(post_roll, 18)
+local cfg_note_step = num(note_step, 26)
+local cfg_channel_step = num(channel_step, 120)
+local cfg_note_height = num(note_height, 24)
+local cfg_note_width = num(note_width, 24)
+local cfg_grid_width = num(grid_width, 4)
+local cfg_grid_alpha = clamp01(num(grid_alpha, 27) / 100.0)
+local cfg_beat_alpha = clamp01(num(beat_alpha, 18) / 100.0)
+local cfg_bar_alpha = clamp01(num(bar_alpha, 32) / 100.0)
+local cfg_playback_alpha = clamp01(num(playback_alpha, 22) / 100.0)
+local cfg_playback_thickness = num(playback_thickness, 26)
+local cfg_active_hold_ms = num(active_hold_time_ms, 400)
+local cfg_active_ratio = math.max(1.0, num(active_ratio, 140) / 100.0)
+local cfg_active_white = clamp01(num(active_white_rate, 90) / 100.0)
+local cfg_ripple_duration_ms = num(ripple_lifetime_ms, 1600)
+local cfg_ripple_size = math.max(0.2, num(ripple_size, 1000) / 100.0)
+local cfg_ripple_thickness_scale = math.max(0.2, num(ripple_thickness_rate, 100) / 100.0)
+local cfg_max_segments = math.max(1, math.floor(num(max_segments, 3072)))
+local cfg_max_beats = math.max(1, math.floor(num(max_beats, 1024)))
+local cfg_max_ripples = math.max(1, math.floor(num(max_ripples, 512)))
+local cfg_color_mode = math.floor(num(color_mode, 0) + 0.5)
+local cfg_grid_color = tonumber(grid_color) or 0x444444
+local cfg_playback_color = tonumber(playback_color) or 0xaaaaaa
+
+local segments = midi.get_visible_segments(obj.time, cfg_pre_roll, cfg_post_roll, cfg_max_segments)
+local beats = midi.get_visible_beats(obj.time, cfg_pre_roll, cfg_post_roll, cfg_max_beats)
+local recent = midi.get_recent_active_notes(obj.time, cfg_ripple_duration_ms, cfg_max_ripples)
+
+local x_min = -cfg_pre_roll * cfg_time_scale
+local x_max = cfg_post_roll * cfg_time_scale
+local max_ripple_full_h = cfg_note_height * cfg_ripple_size
+local max_ripple_full_w = cfg_note_width * cfg_ripple_size
+local max_ripple_ring_width = math.max(1, math.min(max_ripple_full_h, max_ripple_full_w) * RIPPLE_THICKNESS_RATIO * cfg_ripple_thickness_scale)
+local max_ripple_ry = math.max(max_ripple_ring_width + 1, max_ripple_full_h * RIPPLE_OUTER_RADIUS_RATIO)
+local max_ripple_rz = math.max(max_ripple_ring_width + 1, max_ripple_full_w * RIPPLE_OUTER_RADIUS_RATIO)
+local ripple_margin_y = math.max(0, max_ripple_ry - cfg_note_height * 0.5)
+local ripple_margin_z = math.max(0, max_ripple_rz - cfg_note_width * 0.5)
+local y_min = pitch_to_y(127, cfg_note_step) - cfg_note_height * 0.5 - ripple_margin_y
+local y_max = pitch_to_y(0, cfg_note_step) + cfg_note_height * 0.5 + ripple_margin_y
+local z_min = (0 - 7.5) * cfg_channel_step - cfg_note_width * 0.5 - ripple_margin_z
+local z_max = (15 - 7.5) * cfg_channel_step + cfg_note_width * 0.5 + ripple_margin_z
+local playback_half = cfg_playback_thickness * 0.5
+
+obj.setoption("culling", 0)
+obj.setoption("focus_mode", "fixed_size")
+obj.load("figure", "四角形", 0xffffff, 64)
+clear_batches()
+
+append_box(normal_quads, -playback_half, playback_half, y_min, y_max, z_min, z_max, cfg_playback_color, cfg_playback_alpha)
+
+append_plane_frame_x(normal_quads, 0, y_min, y_max, z_min, z_max, cfg_grid_width * 1.5, cfg_grid_color, math.max(cfg_grid_alpha, cfg_playback_alpha))
+append_line_x(normal_quads, x_min, x_max, y_min, z_min, cfg_grid_width, cfg_grid_color, cfg_grid_alpha)
+append_line_x(normal_quads, x_min, x_max, y_min, z_max, cfg_grid_width, cfg_grid_color, cfg_grid_alpha)
+append_line_x(normal_quads, x_min, x_max, y_max, z_min, cfg_grid_width, cfg_grid_color, cfg_grid_alpha)
+append_line_x(normal_quads, x_min, x_max, y_max, z_max, cfg_grid_width, cfg_grid_color, cfg_grid_alpha)
+
+for channel = 1, 15 do
+	local z = (channel - 7.5) * cfg_channel_step
+	append_line_x(normal_quads, x_min, x_max, y_min, z, cfg_grid_width, cfg_grid_color, cfg_grid_alpha * 0.75)
+	append_line_x(normal_quads, x_min, x_max, y_max, z, cfg_grid_width, cfg_grid_color, cfg_grid_alpha * 0.75)
+end
+
+for note_no = 0, 127, 12 do
+	local y = pitch_to_y(note_no, cfg_note_step)
+	append_line_x(normal_quads, x_min, x_max, y, z_min, cfg_grid_width, cfg_grid_color, cfg_grid_alpha)
+	append_line_x(normal_quads, x_min, x_max, y, z_max, cfg_grid_width, cfg_grid_color, cfg_grid_alpha)
+end
+
+for i = 1, #beats, 2 do
+	local beat_time = beats[i + 0]
+	local beat_in_bar = math.floor(beats[i + 1] + 0.5)
+	local x = (beat_time - obj.time) * cfg_time_scale
+	local alpha = cfg_beat_alpha
+	local width = cfg_grid_width
+	if beat_in_bar == 0 then
+		alpha = cfg_bar_alpha
+		width = cfg_grid_width * 1.5
+	end
+	append_plane_frame_x(normal_quads, x, y_min, y_max, z_min, z_max, width, cfg_grid_color, alpha)
+end
+
+for i = 1, #segments, 8 do
+	local visible_start = segments[i + 0]
+	local visible_end = segments[i + 1]
+	local pitch = segments[i + 2]
+	local channel = math.floor(segments[i + 3] + 0.5)
+	local note_start = segments[i + 5]
+	local note_end = segments[i + 6]
+	local note_no = math.floor(segments[i + 7] + 0.5)
+
+	local x0 = (visible_start - obj.time) * cfg_time_scale
+	local x1 = (visible_end - obj.time) * cfg_time_scale
+	local y_center = pitch_to_y(pitch, cfg_note_step)
+	local z_center = (channel - 7.5) * cfg_channel_step
+	local half_h = cfg_note_height * 0.5
+	local half_w = cfg_note_width * 0.5
+
+	local base_color
+	if cfg_color_mode == 1 then
+		base_color = scale_color(note_no)
+	else
+		base_color = channel_color(channel)
+	end
+	local color = base_color
+	if note_start <= obj.time and obj.time <= note_end and cfg_active_hold_ms > 0 then
+		local age_ms = (obj.time - note_start) * 1000.0
+		if age_ms < cfg_active_hold_ms then
+			local rate = 1.0 - age_ms / cfg_active_hold_ms
+			color = mix_to_white(color, rate * cfg_active_white)
+			half_h = half_h * (1.0 + (cfg_active_ratio - 1.0) * rate)
+			half_w = half_w * (1.0 + (cfg_active_ratio - 1.0) * rate)
+		end
+	end
+
+	append_box(
+		normal_quads,
+		x0, x1,
+		y_center - half_h, y_center + half_h,
+		z_center - half_w, z_center + half_w,
+		color,
+		1.0
+	)
+end
+
+for i = 1, #recent, 4 do
+	local pitch = recent[i + 0]
+	local channel = math.floor(recent[i + 1] + 0.5)
+	local elapsed_ms = recent[i + 2]
+	local note_no = math.floor(recent[i + 3] + 0.5)
+	local t = clamp01(elapsed_ms / cfg_ripple_duration_ms)
+	local alpha = 1.0 - t
+	local scale = cfg_ripple_size * (1.0 - t)
+	local y = pitch_to_y(pitch, cfg_note_step)
+	local z = (channel - 7.5) * cfg_channel_step
+	local full_h = cfg_note_height * scale
+	local full_w = cfg_note_width * scale
+	local ring_width = math.max(1, math.min(full_h, full_w) * RIPPLE_THICKNESS_RATIO * cfg_ripple_thickness_scale)
+	local ry = math.max(ring_width + 1, full_h * RIPPLE_OUTER_RADIUS_RATIO)
+	local rz = math.max(ring_width + 1, full_w * RIPPLE_OUTER_RADIUS_RATIO)
+	local color
+	if cfg_color_mode == 1 then
+		color = scale_color(note_no)
+	else
+		color = channel_color(channel)
+	end
+	append_ring_x(ripple_quads, playback_half + 0.5, y, z, ry, rz, ring_width, color, alpha)
+end
+
+flush_batch(normal_quads, "none")
+flush_batch(ripple_quads, "alpha_add")
