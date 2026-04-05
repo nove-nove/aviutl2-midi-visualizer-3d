@@ -6,26 +6,31 @@
 --track@post_roll:後方表示秒,0.5,30,18,0.1
 --track@note_step:音高の間隔,4,120,26,1
 --track@channel_step:トラック間隔,12,320,120,1
+--track@max_segments:最大ノート数,1,8192,3072,1
+--track@max_beats:最大拍数,1,4096,1024,1
+--track@max_ripples:最大波紋,1,2048,512,1
+--select@color_mode:色モード,CHANNEL=0,SCALE=1
+--group:ノート,false
 --track@note_height:ノート高さ,2,120,24,1
 --track@note_width:ノート幅,2,200,24,1
---track@grid_width:グリッド幅,1,32,4,1
---track@grid_alpha:グリッド透,0,100,27,1
---track@beat_alpha:拍枠の透過,0,100,18,1
---track@bar_alpha:小節枠透過,0,100,32,1
---track@playback_alpha:断面の透過,0,100,22,1
---track@playback_thickness:断面の厚み,2,120,26,1
 --track@active_hold_time_ms:発光時間ms,0,2000,400,1
 --track@active_ratio:発光サイズ,100,300,140,1
 --track@active_white_rate:白寄せ率,0,100,90,1
 --track@ripple_lifetime_ms:波紋時間ms,100,4000,1600,1
 --track@ripple_size:波紋サイズ,20,2000,1000,1
 --track@ripple_thickness_rate:波紋の太さ,20,300,100,1
---track@max_segments:最大ノート数,1,8192,3072,1
---track@max_beats:最大拍数,1,4096,1024,1
---track@max_ripples:最大波紋,1,2048,512,1
---select@color_mode:色モード,CHANNEL=0,SCALE=1
---color@grid_color:Grid,0x444444
---color@playback_color:PlaySec,0xaaaaaa
+--group
+--group:グリッド,false
+--track@grid_width:グリッド幅,1,32,4,1
+--track@grid_alpha:グリッド透,0,100,27,1
+--track@beat_alpha:拍枠の透過,0,100,18,1
+--track@bar_alpha:小節枠透過,0,100,32,1
+--track@playback_alpha:断面の透過,0,100,22,1
+--track@playback_thickness:断面の厚み,2,120,26,1
+--color@grid_color:グリッド色,0x444444
+--color@playback_color:断面色,0xaaaaaa
+--group
+--group:Ch色,false
 --color@ch01:Ch-01,0xef7272
 --color@ch02:Ch-02,0x81ef72
 --color@ch03:Ch-03,0x7291ef
@@ -42,6 +47,8 @@
 --color@ch14:Ch-14,0x72bfef
 --color@ch15:Ch-15,0xef72d0
 --color@ch16:Ch-16,0xef72a0
+--group
+--group:Scale色,false
 --color@sc01:Scale01(C),0xd50000
 --color@sc02:Scale02(C#),0x480bff
 --color@sc03:Scale03(D),0xffff40
@@ -54,6 +61,7 @@
 --color@sc10:Scale10(A),0x75ff75
 --color@sc11:Scale11(A#),0x6a0035
 --color@sc12:Scale12(B),0x75e7ff
+--group
 
 local midi = obj.module("AviUtl2MidiVisualizer3D")
 local channel_colors = {
