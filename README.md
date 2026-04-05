@@ -37,13 +37,13 @@ GitHub Release の外側 zip から `aviutl2-midi-visualizer-3d.au2pkg.zip` を�
 手動で配置する場合は、次の 2 ファイルを同じフォルダへ置いてください。
 
 - `AviUtl2MidiVisualizer3D.mod2`
-- `AviUtl2MidiVisualizer3D.obj2`
+- `Piano Roll 3D.obj2`
 
 例:
 
 ```text
 ProgramData\aviutl2\Script\AviUtl2MidiVisualizer3D\AviUtl2MidiVisualizer3D.mod2
-ProgramData\aviutl2\Script\AviUtl2MidiVisualizer3D\AviUtl2MidiVisualizer3D.obj2
+ProgramData\aviutl2\Script\AviUtl2MidiVisualizer3D\Piano Roll 3D.obj2
 ```
 
 ## 主な調整項目

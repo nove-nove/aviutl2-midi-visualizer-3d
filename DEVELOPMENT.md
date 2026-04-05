@@ -8,7 +8,7 @@
 
 - [`src/AviUtl2MidiVisualizer3DModule.cpp`](src/AviUtl2MidiVisualizer3DModule.cpp)
   - MIDI を解析して可視ノート区間と拍位置を返す `mod2`
-- [`scripts/AviUtl2MidiVisualizer3D.obj2`](scripts/AviUtl2MidiVisualizer3D.obj2)
+- [`scripts/Piano Roll 3D.obj2`](scripts/Piano Roll 3D.obj2)
   - 3D ピアノロールを描画する `obj2`
 - [`tools/build_mod2.ps1`](tools/build_mod2.ps1)
   - `AviUtl2MidiVisualizer3D.mod2` をビルドするスクリプト
@@ -50,7 +50,7 @@
 
 - `package.ini`
 - `Script\AviUtl2MidiVisualizer3D\AviUtl2MidiVisualizer3D.mod2`
-- `Script\AviUtl2MidiVisualizer3D\AviUtl2MidiVisualizer3D.obj2`
+- `Script\AviUtl2MidiVisualizer3D\Piano Roll 3D.obj2`
 
 外側の zip 構成:
 

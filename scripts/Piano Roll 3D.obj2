@@ -1,5 +1,5 @@
 --information:AviUtl2 MIDI Visualizer 3D
---label:AviUtl2 MIDI Visualizer 3D
+--label:Piano Roll 3D
 --file@midi_path:MIDI
 --track@time_scale:時間スケール,40,2400,520,1
 --track@pre_roll:前方表示秒,0.5,30,6,0.1

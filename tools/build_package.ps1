@@ -34,7 +34,7 @@ information=$packageDisplayName ($Version)
 "@ | Set-Content -Path (Join-Path $innerRoot "package.ini") -Encoding UTF8
 
 Copy-Item -LiteralPath (Join-Path $repoRoot "dist\AviUtl2MidiVisualizer3D.mod2") -Destination $scriptDir -Force
-Copy-Item -LiteralPath (Join-Path $repoRoot "scripts\AviUtl2MidiVisualizer3D.obj2") -Destination $scriptDir -Force
+Copy-Item -LiteralPath (Join-Path $repoRoot "scripts\Piano Roll 3D.obj2") -Destination $scriptDir -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot "README.md") -Destination $outerRoot -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot "LICENSE") -Destination $outerRoot -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot "THIRD_PARTY_NOTICES.md") -Destination $outerRoot -Force
